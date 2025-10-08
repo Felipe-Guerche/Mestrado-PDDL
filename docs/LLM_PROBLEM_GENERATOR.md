@@ -12,7 +12,7 @@ Permitir que uma LLM gere problemas PDDL válidos baseados em descrições em li
 
 ```pddl
 (define (problem <nome_do_problema>)
-  (:domain hospital_robot)
+  (:domain hospital-robo-simples)
   
   (:objects
     <lista_de_objetos>
@@ -33,10 +33,10 @@ Permitir que uma LLM gere problemas PDDL válidos baseados em descrições em li
 #### 1. **Cabeçalho do Problema**
 ```pddl
 (define (problem hospital_<numero>)
-  (:domain hospital_robot)
+  (:domain hospital-robo-simples)
 ```
 - **nome_do_problema**: `hospital_<numero>` (ex: `hospital_03`, `hospital_04`)
-- **domínio**: Sempre `hospital_robot` (não modificar)
+- **domínio**: Sempre `hospital-robo-simples` (não modificar)
 
 #### 2. **Seção :objects**
 ```pddl
@@ -105,7 +105,7 @@ Permitir que uma LLM gere problemas PDDL válidos baseados em descrições em li
 **Saída PDDL:**
 ```pddl
 (define (problem hospital_03)
-  (:domain hospital_robot)
+  (:domain hospital-robo-simples)
   
   (:objects
     r1 - robo
@@ -131,7 +131,7 @@ Permitir que uma LLM gere problemas PDDL válidos baseados em descrições em li
 **Saída PDDL:**
 ```pddl
 (define (problem hospital_04)
-  (:domain hospital_robot)
+  (:domain hospital-robo-simples)
   
   (:objects
     r1 - robo
@@ -158,7 +158,7 @@ Permitir que uma LLM gere problemas PDDL válidos baseados em descrições em li
 ```
 Você é um gerador de problemas PDDL para navegação hospitalar. 
 
-DOMÍNIO: Use sempre o domínio "hospital_robot" (não modifique).
+DOMÍNIO: Use sempre o domínio "hospital-robo-simples" (não modifique).
 
 OBJETIVO: Gere um problema PDDL válido baseado na descrição fornecida.
 
@@ -178,7 +178,7 @@ LOCAIS DISPONÍVEIS:
 FORMATO DE SAÍDA:
 ```pddl
 (define (problem hospital_<numero>)
-  (:domain hospital_robot)
+  (:domain hospital-robo-simples)
   
   (:objects
     r1 - robo
@@ -208,7 +208,7 @@ DESCRIÇÃO: O robô está na base e precisa ir para a sala de cirurgia, passand
 
 ### Checklist para LLM
 - [ ] Nome do problema: `hospital_<numero>`
-- [ ] Domínio: `hospital_robot`
+- [ ] Domínio: `hospital-robo-simples`
 - [ ] Robô: `r1 - robo`
 - [ ] Locais: lista com `- local`
 - [ ] Estado inicial: `(em r1 <local_inicial>)`

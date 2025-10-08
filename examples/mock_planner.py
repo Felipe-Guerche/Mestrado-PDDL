@@ -1,25 +1,59 @@
 #!/usr/bin/env python3
 """
-Mock planner for the hospital-robot-simple domain.
+==============================================================================
+MOCK PLANNER - Planejador Simulado para Demonstração Didática
+==============================================================================
 
-This script parses a minimal subset of problem PDDL (em português) to:
-- Extrair locais e o nome do robô
-- Extrair (em robo <local>) posição inicial
-- Extrair (conectado A B) arestas
-- Extrair goal (em robo <local-objetivo>)
+Este script implementa um planejador simplificado (mock) para o domínio de
+navegação hospitalar. Ele foi desenvolvido para fins educacionais e serve
+como um substituto rápido de planners PDDL completos durante desenvolvimento
+e testes iniciais.
 
-Then it computes a shortest path from the initial location to the goal location
-using BFS and prints either:
-- a plan with navigate actions (default), or
-- an API-style intent object suitable for robot APIs.
+FUNCIONAMENTO:
+  O script realiza parsing de um subconjunto mínimo de PDDL em português para:
+  1. Extrair todos os locais declarados no problema
+  2. Identificar o nome do robô definido
+  3. Extrair a posição inicial do robô: (em robo <local>)
+  4. Extrair todas as conexões entre locais: (conectado A B)
+  5. Extrair o objetivo desejado: (em robo <local-objetivo>)
 
-Usage:
+  Com essas informações, o planejador:
+  - Constrói um grafo de conectividade do hospital
+  - Calcula o caminho mais curto entre a posição inicial e o objetivo
+    usando o algoritmo BFS (Busca em Largura)
+  - Gera um plano de ações de navegação OU um objeto JSON estilo API
+
+MODOS DE SAÍDA:
+  1. Padrão: Plano PDDL com ações de navegação
+  2. --api: Formato JSON simplificado para integração com APIs
+  3. --api --verbose-api: Formato JSON detalhado com waypoints e ETA
+
+EXEMPLOS DE USO:
+
+  # Gerar plano PDDL padrão
   python examples/mock_planner.py problems/hospital_01.pddl
+  
+  # Gerar saída em formato API (JSON)
   python examples/mock_planner.py problems/hospital_01.pddl --api
+  
+  # Gerar saída API completa com detalhes
+  python examples/mock_planner.py problems/hospital_01.pddl --api --verbose-api
 
-Output plan format:
+FORMATO DE SAÍDA (Plano PDDL):
   (navigate robo loc1 loc2)
+  (navigate robo loc2 loc3)
   ...
+
+FORMATO DE SAÍDA (API JSON):
+  {"task": "navigate", "destination": "farmacia", "destination_label": "farmácia"}
+
+LIMITAÇÕES:
+  - Este é um planejador SIMPLIFICADO para demonstração
+  - Não valida precondições ou efeitos das ações
+  - Assume que o grafo é conexo (existe caminho entre todos os pontos)
+  - Para planejamento real, use planners completos como Fast Downward ou
+    Unified Planning (disponível em planners/pddl_planner.py)
+==============================================================================
 """
 
 import re
@@ -30,9 +64,26 @@ import json
 
 
 def strip_comments(text: str) -> str:
+    """
+    Remove comentários PDDL do texto.
+    
+    Esta função processa o arquivo PDDL removendo todas as linhas que
+    começam com ';' (comentários em PDDL), facilitando o parsing posterior.
+    
+    Args:
+        text: Conteúdo completo do arquivo PDDL
+        
+    Returns:
+        Texto sem as linhas de comentário
+        
+    Nota:
+        Em PDDL, comentários começam com ';' (ponto e vírgula)
+        Similar ao ';' em Lisp/Scheme
+    """
     lines = []
     for line in text.splitlines():
         s = line.strip()
+        # Ignora linhas que começam com comentário
         if s.startswith(";;"):
             continue
         if s.startswith(";"):
@@ -42,94 +93,209 @@ def strip_comments(text: str) -> str:
 
 
 def parse_problem(file_path: str):
+    """
+    Faz parsing de um arquivo PDDL de problema e extrai as informações essenciais.
+    
+    Esta função analisa o arquivo PDDL e extrai:
+    - O nome do robô
+    - A localização inicial do robô
+    - O objetivo (localização desejada)
+    - O grafo de conectividade (quais locais estão conectados)
+    
+    Args:
+        file_path: Caminho para o arquivo .pddl do problema
+        
+    Returns:
+        Uma tupla contendo (nome_robo, local_inicial, local_objetivo, grafo_conexoes)
+        onde grafo_conexoes é um dicionário {local_origem: [lista_destinos]}
+        
+    Raises:
+        ValueError: Se alguma seção obrigatória não for encontrada
+        
+    Exemplo:
+        robot, start, goal, edges = parse_problem("problems/hospital_01.pddl")
+        # robot = "r1"
+        # start = "base"
+        # goal = "farmacia"
+        # edges = {"base": ["farmacia"], "farmacia": ["base"]}
+    """
+    # Ler o arquivo PDDL
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
+    # Remover comentários para facilitar o parsing
     content = strip_comments(content)
 
-    # Extrair bloco de objetos
+    # =========================================================================
+    # PASSO 1: Extrair objetos declarados no problema
+    # =========================================================================
+    # Procura o bloco (:objects ...) no PDDL
     objects_match = re.search(r"\(:objects([\s\S]*?)\)", content, re.IGNORECASE)
     if not objects_match:
-        raise ValueError("No :objects block found")
+        raise ValueError("Bloco :objects não encontrado no arquivo PDDL")
     objects_block = objects_match.group(1)
 
-    # Coletar tokens (nomes antes do "-" e tipos)
-    # Procurar tipos 'robo' e 'local'
+    # Parsear objetos: procurar padrões como "pudu - robo" ou "base farmacia - local"
     robot_names = []
     locations = []
-    # Split by lines, handle segments like: name1 name2 - location
+    
     for line in objects_block.splitlines():
         line = line.strip()
         if not line or line.startswith(";"):
             continue
-        # pattern: names - type
+        
+        # Procurar padrão: nome1 nome2 ... - tipo
         m = re.search(r"^(.*?)\s-\s(\w+)$", line)
         if not m:
             continue
+            
         names_part, type_name = m.group(1), m.group(2)
         names = [n for n in names_part.strip().split() if n]
+        
+        # Categorizar por tipo
         if type_name.lower() == "robo":
             robot_names.extend(names)
         elif type_name.lower() == "local":
             locations.extend(names)
 
+    # Validar que existe pelo menos um robô
     if not robot_names:
-        raise ValueError("No robot declared in :objects")
-    robot = robot_names[0]
+        raise ValueError("Nenhum robô declarado no bloco :objects")
+    robot = robot_names[0]  # Usar o primeiro robô encontrado
 
-    # Extrair bloco :init
+    # =========================================================================
+    # PASSO 2: Extrair estado inicial (:init)
+    # =========================================================================
+    # O bloco :init contém o estado inicial do mundo
     init_match = re.search(r"\(:init([\s\S]*?)\)\s*\)\s*\Z|\(:init([\s\S]*?)\)\s*\(:goal", content, re.IGNORECASE)
     if not init_match:
-        raise ValueError("No :init block found")
+        raise ValueError("Bloco :init não encontrado no arquivo PDDL")
     init_block = next(g for g in init_match.groups() if g)
 
-    # Posição inicial: (em robo <local>)
+    # Extrair posição inicial do robô: (em <robo> <local>)
     init_loc_match = re.search(r"\(em\s+" + re.escape(robot) + r"\s+(\w+)\)", init_block, re.IGNORECASE)
     if not init_loc_match:
-        # Fallback global
+        # Tentar buscar em todo o conteúdo como fallback
         init_loc_match = re.search(r"\(em\s+" + re.escape(robot) + r"\s+(\w+)\)", content, re.IGNORECASE)
         if not init_loc_match:
-            raise ValueError("Posição inicial do robô não encontrada em :init")
+            raise ValueError(f"Posição inicial do robô '{robot}' não encontrada em :init")
     start_loc = init_loc_match.group(1)
 
-    # Conexões: (conectado A B)
+    # Extrair todas as conexões: (conectado <origem> <destino>)
+    # Constrói um grafo direcionado de navegação
     edges = defaultdict(list)
     for m in re.finditer(r"\(conectado\s+(\w+)\s+(\w+)\)", init_block, re.IGNORECASE):
-        a, b = m.group(1), m.group(2)
-        edges[a].append(b)
+        origem, destino = m.group(1), m.group(2)
+        edges[origem].append(destino)
 
-    # Objetivo: buscar (em robo <local>) após :goal
+    # =========================================================================
+    # PASSO 3: Extrair objetivo (:goal)
+    # =========================================================================
+    # Procurar onde o robô deve estar ao final: (em <robo> <local>)
     goal_loc_match = re.search(r":goal[\s\S]*?\(em\s+" + re.escape(robot) + r"\s+(\w+)\)", content, re.IGNORECASE)
     if not goal_loc_match:
-        raise ValueError("Objetivo (em robo <local>) não encontrado em :goal")
+        raise ValueError(f"Objetivo para o robô '{robot}' não encontrado em :goal")
     goal_loc = goal_loc_match.group(1)
 
     return robot, start_loc, goal_loc, edges
 
 
 def bfs_path(edges, start, goal):
+    """
+    Calcula o caminho mais curto entre dois locais usando BFS (Busca em Largura).
+    
+    Este algoritmo explora o grafo de conectividade nível por nível,
+    garantindo que o primeiro caminho encontrado até o objetivo seja
+    também o caminho com menor número de passos (ótimo).
+    
+    Args:
+        edges: Dicionário representando o grafo {local: [vizinhos]}
+        start: Local de partida (onde o robô está)
+        goal: Local de destino (onde o robô quer chegar)
+        
+    Returns:
+        Lista ordenada de locais formando o caminho, incluindo início e fim.
+        Exemplo: ["base", "recepcao", "farmacia"]
+        Retorna None se não houver caminho possível.
+        
+    Complexidade:
+        O(V + E) onde V = número de locais, E = número de conexões
+        
+    Algoritmo:
+        BFS (Breadth-First Search) - Busca em Largura
+        Garante encontrar o caminho mais curto em grafos não-ponderados
+    """
+    # Caso especial: já está no destino
     if start == goal:
         return [start]
+    
+    # Conjunto de locais já visitados (para evitar ciclos)
     visited = set([start])
+    
+    # Fila de exploração: (local_atual, caminho_até_aqui)
     queue = deque([(start, [start])])
+    
     while queue:
+        # Pegar próximo local a explorar
         node, path = queue.popleft()
-        for nei in edges.get(node, []):
-            if nei in visited:
+        
+        # Explorar todos os vizinhos deste local
+        for neighbor in edges.get(node, []):
+            # Pular se já visitamos este vizinho
+            if neighbor in visited:
                 continue
-            npath = path + [nei]
-            if nei == goal:
-                return npath
-            visited.add(nei)
-            queue.append((nei, npath))
+            
+            # Construir novo caminho incluindo este vizinho
+            new_path = path + [neighbor]
+            
+            # Verificar se chegamos no objetivo
+            if neighbor == goal:
+                return new_path
+            
+            # Marcar como visitado e adicionar à fila para exploração
+            visited.add(neighbor)
+            queue.append((neighbor, new_path))
+    
+    # Não foi possível encontrar um caminho
+    # (grafo desconexo - locais não estão conectados)
     return None
 
 
 def humanize_location(name: str, custom_map: Dict[str, str]) -> str:
-    # Use custom overrides first (to handle accents etc.)
+    """
+    Converte identificadores técnicos de locais para rótulos legíveis por humanos.
+    
+    Esta função transforma nomes de locais no formato de identificador
+    (ex: "farmacia", "corredor_central") em textos mais apresentáveis
+    para interfaces de usuário (ex: "farmácia", "corredor central").
+    
+    Args:
+        name: Identificador técnico do local (formato ASCII, sem acentos)
+        custom_map: Dicionário de mapeamento customizado para casos especiais
+                    onde é necessário adicionar acentuação ou formatação específica
+        
+    Returns:
+        String formatada para apresentação ao usuário
+        
+    Exemplo:
+        >>> humanize_location("farmacia", {"farmacia": "farmácia"})
+        "farmácia"
+        >>> humanize_location("corredor_central", {})
+        "corredor central"
+        
+    Comportamento:
+        1. Se existe mapeamento customizado, usa ele (para acentuação)
+        2. Caso contrário, substitui underscores por espaços
+        3. Mantém lowercase (padrão para APIs REST)
+    """
+    # Primeiro: verificar se existe tradução customizada
+    # (necessário para adicionar acentuação em português)
     if name in custom_map:
         return custom_map[name]
-    # Replace underscores with spaces and keep lowercase as typical APIs do
+    
+    # Caso padrão: substituir underscores por espaços
+    # Exemplos: "sala_cirurgia" -> "sala cirurgia"
+    #           "quarto_101" -> "quarto 101"
     return name.replace("_", " ")
 
 

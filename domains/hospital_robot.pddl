@@ -1,49 +1,91 @@
-;; Domain: Hospital Robot - (Apenas Navegação)
-;; Descrição: Robô autônomo que navega entre locais de um hospital
-;; Caso de uso: Pudu Robotics / Agliex em ambiente hospitalar
-;; Versão: 1.0 - Navegação
+;; ============================================================
+;; DOMÍNIO: Hospital Robot - Navegação Básica
+;; ============================================================
+;; Descrição: 
+;;   Este domínio modela um robô autônomo que é capaz de navegar
+;;   entre diferentes locais dentro de um ambiente hospitalar.
+;;   O robô pode se mover de um local para outro, desde que exista
+;;   uma conexão (corredor, passagem) entre esses locais.
+;;
+;; Caso de uso prático:
+;;   Baseado em robôs de serviço hospitalar que realizam entregas
+;;   de medicamentos, alimentos e outros itens em hospitais e clínicas.
+;;   Exemplos incluem robôs autônomos de navegação indoor.
+;;
+;; Versão: 1.0 - Navegação Básica (sem transporte de objetos)
+;; ============================================================
 
 (define (domain hospital-robo-simples)
   (:requirements :strips :typing)
   
   ;; ============================================================
-  ;; TIPOS
+  ;; TIPOS DE OBJETOS
+  ;; ============================================================
+  ;; Define os tipos de entidades que existem neste domínio:
+  ;;   - robo: representa o robô autônomo que irá navegar
+  ;;   - local: representa os diferentes locais do hospital
+  ;;            (salas, corredores, recepção, etc.)
   ;; ============================================================
   (:types 
     robo local - object
   )
   
   ;; ============================================================
-  ;; PREDICADOS
+  ;; PREDICADOS (Estados do Mundo)
+  ;; ============================================================
+  ;; Define as relações e propriedades que podem ser verdadeiras
+  ;; ou falsas em um determinado momento.
   ;; ============================================================
   (:predicates
-    ;; Localização do robô
+    ;; Indica onde o robô está localizado no momento
+    ;; Exemplo: (em r1 farmacia) = "o robô r1 está na farmácia"
     (em ?r - robo ?loc - local)
     
-    ;; Conectividade entre locais
-    ;; (conectado loc1 loc2) significa que o robô pode ir de loc1 para loc2
+    ;; Indica se existe um caminho direto entre dois locais
+    ;; Representa a topologia/mapa do hospital
+    ;; Exemplo: (conectado base farmacia) = "é possível ir da base para a farmácia"
+    ;; Nota: A conexão é direcional, então é necessário definir
+    ;;       (conectado A B) E (conectado B A) para movimento bidirecional
     (conectado ?de ?para - local)
   )
   
   ;; ============================================================
-  ;; AÇÕES
+  ;; AÇÕES DISPONÍVEIS
+  ;; ============================================================
+  ;; Define as ações que o robô pode executar para modificar
+  ;; o estado do mundo.
   ;; ============================================================
   
+  ;; ------------------------------------------------------------
   ;; Ação: NAVEGAR
-  ;; Descrição: Move o robô de uma localização para outra conectada
+  ;; ------------------------------------------------------------
+  ;; Descrição:
+  ;;   Move o robô de sua localização atual para um local adjacente,
+  ;;   desde que exista uma conexão entre os dois locais.
+  ;;
   ;; Parâmetros:
-  ;;   ?r - robô que vai se mover
-  ;;   ?from - localização atual (origem)
-  ;;   ?to - localização destino
+  ;;   ?r    - O robô que irá realizar o movimento
+  ;;   ?de   - Local de origem (onde o robô está atualmente)
+  ;;   ?para - Local de destino (para onde o robô quer ir)
+  ;;
+  ;; Pré-condições (o que deve ser verdade antes da ação):
+  ;;   1. O robô deve estar fisicamente no local de origem
+  ;;   2. Deve existir uma conexão/caminho do local de origem
+  ;;      para o local de destino
+  ;;
+  ;; Efeitos (o que muda após a ação ser executada):
+  ;;   1. O robô não está mais no local de origem
+  ;;   2. O robô agora está no local de destino
+  ;; ------------------------------------------------------------
   (:action navegar
     :parameters (?r - robo ?de ?para - local)
     :precondition (and 
-      (em ?r ?de)             ; Robô deve estar na origem
-      (conectado ?de ?para)   ; Deve existir caminho de de para para
+      (em ?r ?de)             ; O robô precisa estar atualmente no local de origem
+      (conectado ?de ?para)   ; Precisa existir um caminho direto entre origem e destino
     )
     :effect (and 
-      (not (em ?r ?de))       ; Robô sai da origem
-      (em ?r ?para)           ; Robô chega no destino
+      (not (em ?r ?de))       ; Remove o robô do local de origem
+      (em ?r ?para)           ; Posiciona o robô no local de destino
     )
   )
 )

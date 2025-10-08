@@ -311,8 +311,6 @@ def main():
         sys.exit(2)
 
     problem_file = sys.argv[1]
-    api_mode = any(arg == "--api" for arg in sys.argv[2:])
-    verbose_api = any(arg == "--verbose-api" for arg in sys.argv[2:])
     try:
         robot, start, goal, edges = parse_problem(problem_file)
     except Exception as e:
@@ -321,59 +319,32 @@ def main():
 
     path = bfs_path(edges, start, goal)
     if path is None:
-        if api_mode:
-            # Minimal API-style error payload (didactic)
-            result = {
-                "task": "navigate",
-                "destination": goal,
-                "status": "no_path",
-            }
-            print(json.dumps(result, ensure_ascii=False))
-        else:
-            print("No solution found (disconnected graph)")
+        result = {
+            "task": "navigate",
+            "destination": goal,
+            "status": "no_path",
+        }
+        print(json.dumps(result, ensure_ascii=False))
         sys.exit(1)
 
-    if api_mode:
-        # Minimal didactic API payload by default
-        pretty_map = {
-            "farmacia": "farmácia",
-            "recepcao": "recepção",
-            "corredor_central": "corredor central",
-            "corredor_ala_1": "corredor ala 1",
-            "corredor_ala_2": "corredor ala 2",
-            "corredor_ala_3": "corredor ala 3",
-            "sala_cirurgia": "sala de cirurgia",
+    # Default: emit simple per-step JSON lines
+    pretty_map = {
+        "farmacia": "farmácia",
+        "recepcao": "recepção",
+        "corredor_central": "corredor central",
+        "corredor_ala_1": "corredor ala 1",
+        "corredor_ala_2": "corredor ala 2",
+        "corredor_ala_3": "corredor ala 3",
+        "sala_cirurgia": "sala de cirurgia",
+    }
+    for a, b in zip(path, path[1:]):
+        dest_label = pretty_map.get(b, b.replace("_", " "))
+        result = {
+            "task": "navigate",
+            "destination": b,
+            "destination_label": dest_label,
         }
-        human_dest = humanize_location(goal, pretty_map)
-
-        if not verbose_api:
-            result = {
-                "task": "navigate",
-                "destination": goal,
-                "destination_label": human_dest,
-            }
-            print(json.dumps(result, ensure_ascii=False))
-        else:
-            # Verbose API payload (optional)
-            hops = max(0, len(path) - 1)
-            eta_seconds = hops * 30
-            human_waypoints = [humanize_location(w, pretty_map) for w in path]
-            result = {
-                "intent": "NAVIGATE",
-                "destination": goal,
-                "destination_label": human_dest,
-                "task": "navigate",
-                "waypoints": path,
-                "waypoint_labels": human_waypoints,
-                "priority": "normal",
-                "constraints": [],
-                "eta_seconds": eta_seconds,
-            }
-            print(json.dumps(result, ensure_ascii=False))
-    else:
-        # Emit plan as navigate steps
-        for a, b in zip(path, path[1:]):
-            print(f"(navigate {robot} {a} {b})")
+        print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":

@@ -356,6 +356,11 @@ def main():
         help='Output in API format (JSON)'
     )
     parser.add_argument(
+        '--simple-api',
+        action='store_true',
+        help='Output in simple API format (compatible with mock planner)'
+    )
+    parser.add_argument(
         '--list-planners',
         action='store_true',
         help='List available planners and exit'
@@ -376,7 +381,9 @@ def main():
     
     planner = PDDLPlanner(args.planner)
     
-    print(f"Using planner: {planner.planner_type}", file=sys.stderr)
+    # Only show planner info if not in simple-api mode
+    if not args.simple_api:
+        print(f"Using planner: {planner.planner_type}", file=sys.stderr)
     
     success, plan, error = planner.solve(
         args.domain,
@@ -385,27 +392,51 @@ def main():
     )
     
     if success:
-        if args.api:
+        if args.simple_api or args.api:
             # Extract goal location from plan
             goal_location = None
             if plan:
                 last_action = plan[-1]
                 # Parse last action to get destination
-                # Format: (navigate robo from to)
+                # Format: (navegar robo from to)
                 parts = last_action.strip('()').split()
                 if len(parts) >= 4:
                     goal_location = parts[3]
             
-            result = {
-                "status": "success",
-                "planner": planner.planner_type,
-                "plan": plan,
-                "num_actions": len(plan) if plan else 0
-            }
-            if goal_location:
-                result["destination"] = goal_location
-            
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            if args.simple_api:
+                # Simple API format (compatible with mock planner)
+                pretty_map = {
+                    "farmacia": "farmácia",
+                    "recepcao": "recepção",
+                    "corredor_central": "corredor central",
+                    "corredor_ala_1": "corredor ala 1",
+                    "corredor_ala_2": "corredor ala 2",
+                    "corredor_ala_3": "corredor ala 3",
+                    "sala_cirurgia": "sala de cirurgia",
+                    "quarto_101": "quarto 101",
+                    "quarto_102": "quarto 102",
+                }
+                
+                destination_label = pretty_map.get(goal_location, goal_location.replace("_", " ")) if goal_location else None
+                
+                result = {
+                    "task": "navigate",
+                    "destination": goal_location,
+                    "destination_label": destination_label
+                }
+                print(json.dumps(result, ensure_ascii=False))
+            else:
+                # Full API format
+                result = {
+                    "status": "success",
+                    "planner": planner.planner_type,
+                    "plan": plan,
+                    "num_actions": len(plan) if plan else 0
+                }
+                if goal_location:
+                    result["destination"] = goal_location
+                
+                print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
             if not args.output:
                 print("; Plan found:")

@@ -67,14 +67,17 @@ def strip_comments(text: str) -> str:
     """
     Remove comentários PDDL do texto.
     
-    Esta função processa o arquivo PDDL removendo todas as linhas que
-    começam com ';' (comentários em PDDL), facilitando o parsing posterior.
+    Esta função processa o arquivo PDDL removendo:
+    - Linhas que começam com ';' (comentários de linha completa)
+    - Comentários inline (tudo após ';' na mesma linha do código)
+    
+    Isso facilita o parsing posterior do PDDL.
     
     Args:
         text: Conteúdo completo do arquivo PDDL
         
     Returns:
-        Texto sem as linhas de comentário
+        Texto sem comentários
         
     Nota:
         Em PDDL, comentários começam com ';' (ponto e vírgula)
@@ -82,12 +85,15 @@ def strip_comments(text: str) -> str:
     """
     lines = []
     for line in text.splitlines():
+        # Remove comentários inline (tudo após o primeiro ';')
+        if ';' in line:
+            line = line.split(';')[0]
+        
         s = line.strip()
-        # Ignora linhas que começam com comentário
-        if s.startswith(";;"):
+        # Ignora linhas que ficaram vazias após remover comentários
+        if not s:
             continue
-        if s.startswith(";"):
-            continue
+        
         lines.append(line)
     return "\n".join(lines)
 

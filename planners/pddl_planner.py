@@ -214,30 +214,54 @@ class PDDLPlanner:
         try:
             from unified_planning.shortcuts import OneshotPlanner, get_environment
             from unified_planning.io import PDDLReader
+            from unified_planning.model import Problem
         except ImportError:
             return False, None, "unified-planning library not installed (try: pip install unified-planning)"
         
         try:
+            import tempfile
+            import shutil
+            
             # Disable credits output
             get_environment().credits_stream = None
             
-            reader = PDDLReader()
-            problem = reader.parse_problem(domain_file, problem_file)
+            # Create temporary files with UTF-8 encoding
+            # This solves Windows encoding issues
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.pddl', delete=False) as temp_domain:
+                with open(domain_file, 'r', encoding='utf-8') as df:
+                    temp_domain.write(df.read())
+                temp_domain_path = temp_domain.name
             
-            # Try with pyperplan engine (native Python)
-            with OneshotPlanner(name='pyperplan') as planner:
-                result = planner.solve(problem)
-                
-                if result.status.name in ['SOLVED_SATISFICING', 'SOLVED_OPTIMALLY']:
-                    plan = self._convert_up_plan_to_pddl(result.plan)
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.pddl', delete=False) as temp_problem:
+                with open(problem_file, 'r', encoding='utf-8') as pf:
+                    temp_problem.write(pf.read())
+                temp_problem_path = temp_problem.name
+            
+            try:
+                reader = PDDLReader()
+                problem = reader.parse_problem(temp_domain_path, temp_problem_path)
+            
+                # Try with pyperplan engine (native Python)
+                with OneshotPlanner(name='pyperplan') as planner:
+                    result = planner.solve(problem)
                     
-                    if output_file:
-                        with open(output_file, 'w') as f:
-                            f.write('\n'.join(plan))
-                    
-                    return True, plan, None
-                else:
-                    return False, None, f"No solution found: {result.status.name}"
+                    if result.status.name in ['SOLVED_SATISFICING', 'SOLVED_OPTIMALLY']:
+                        plan = self._convert_up_plan_to_pddl(result.plan)
+                        
+                        if output_file:
+                            with open(output_file, 'w') as f:
+                                f.write('\n'.join(plan))
+                        
+                        return True, plan, None
+                    else:
+                        return False, None, f"No solution found: {result.status.name}"
+            finally:
+                # Clean up temporary files
+                try:
+                    os.unlink(temp_domain_path)
+                    os.unlink(temp_problem_path)
+                except:
+                    pass
         
         except Exception as e:
             import traceback

@@ -1,0 +1,14 @@
+# Core dependencies (none required for basic usage)
+
+# Optional PDDL planners (install one or more)
+# Unified Planning - Recommended for Python-native solution
+unified-planning[pyperplan,tamer,fast-downward]>=1.0.0
+
+# Alternative: Install planners individually
+# unified-planning>=1.0.0
+# pyperplan>=2.0.0
+
+# Development dependencies
+pytest>=7.0.0
+black>=23.0.0
+

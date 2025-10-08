@@ -80,12 +80,12 @@
   (:action navegar
     :parameters (?r - robo ?de ?para - local)
     :precondition (and 
-      (em ?r ?de)             ; O robô precisa estar atualmente no local de origem
-      (conectado ?de ?para)   ; Precisa existir um caminho direto entre origem e destino
+      (em ?r ?de)
+      (conectado ?de ?para)
     )
     :effect (and 
-      (not (em ?r ?de))       ; Remove o robô do local de origem
-      (em ?r ?para)           ; Posiciona o robô no local de destino
+      (not (em ?r ?de))
+      (em ?r ?para)
     )
   )
 )

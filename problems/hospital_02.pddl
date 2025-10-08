@@ -38,9 +38,9 @@
   ;; mais complexo do hospital.
   ;; ----------------------------------------------------------
   (:objects
-    r1 - robo                                                      ; O robô autônomo
-    base recepcao corredor_central corredor_ala_1                 ; Áreas de circulação
-    farmacia sala_cirurgia quarto_101 quarto_102 - local          ; Salas e destinos
+    r1 - robo
+    base recepcao corredor_central corredor_ala_1
+    farmacia sala_cirurgia quarto_101 quarto_102 - local
   )
   
   ;; ----------------------------------------------------------
@@ -107,7 +107,7 @@
   ;;   Base → Recepção → Corredor Central → Corredor Ala 1 → Sala de Cirurgia
   ;; ----------------------------------------------------------
   (:goal
-    (em r1 sala_cirurgia)        ; O robô deve estar na sala de cirurgia
+    (em r1 sala_cirurgia)
   )
 )
 

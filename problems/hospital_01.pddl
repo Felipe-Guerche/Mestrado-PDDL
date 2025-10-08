@@ -29,8 +29,8 @@
   ;; específico.
   ;; ----------------------------------------------------------
   (:objects
-    r1 - robo                ; O robô autônomo que irá navegar
-    base farmacia - local    ; Os dois locais do hospital neste cenário
+    r1 - robo
+    base farmacia - local
   )
   
   ;; ----------------------------------------------------------
@@ -45,8 +45,8 @@
     
     ;; Topologia do ambiente: define quais locais estão conectados
     ;; Neste caso, há uma conexão bidirecional entre base e farmácia
-    (conectado base farmacia)      ; Caminho: base → farmácia
-    (conectado farmacia base)      ; Caminho: farmácia → base (retorno)
+    (conectado base farmacia)
+    (conectado farmacia base)
   )
   
   ;; ----------------------------------------------------------
@@ -56,6 +56,6 @@
   ;; alcançar através de uma sequência de ações.
   ;; ----------------------------------------------------------
   (:goal
-    (em r1 farmacia)        ; O robô deve estar na farmácia
+    (em r1 farmacia)
   )
 )

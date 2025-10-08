@@ -6,13 +6,13 @@
   (:domain hospital-robo-simples)
   
   (:objects
-    robo - robo
+    pudu - robo
     base farmacia - local
   )
   
   (:init
     ;; Posição inicial do robô
-    (em robo base)
+    (em pudu base)
     
     ;; Mapa do hospital (conectividade)
     (conectado base farmacia)
@@ -20,6 +20,6 @@
   )
   
   (:goal
-    (em robo farmacia)
+    (em pudu farmacia)
   )
 )

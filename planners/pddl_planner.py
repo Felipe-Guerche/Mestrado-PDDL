@@ -65,8 +65,27 @@ class PDDLPlanner:
         return available
     
     def _check_fast_downward(self) -> bool:
-        """Check if Fast Downward is available (WSL or native)"""
-        # Check WSL
+        """Check if Fast Downward is available.
+
+        Preference:
+        1) Python engine via unified-planning (up_fast_downward)
+        2) System binary (native/WSL)
+        """
+        # 1) Python engine via unified-planning
+        try:
+            # Importing registers the engine if installed
+            import up_fast_downward  # type: ignore
+            from unified_planning.shortcuts import OneshotPlanner
+            try:
+                with OneshotPlanner(name='fast-downward'):
+                    return True
+            except Exception:
+                # Engine importable but not usable
+                pass
+        except Exception:
+            pass
+
+        # 2) Check system binary via WSL
         try:
             result = subprocess.run(
                 ["wsl", "which", "fast-downward.py"],
@@ -78,13 +97,13 @@ class PDDLPlanner:
                 return True
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
-        
-        # Check native Windows
+
+        # 3) Check native binary in PATH
         fd_path = shutil.which("fast-downward.py")
         if fd_path:
             return True
-        
-        # Check if downward folder exists in common locations
+
+        # 4) Common install locations
         common_paths = [
             Path.home() / "downward",
             Path("C:/downward"),
@@ -93,7 +112,7 @@ class PDDLPlanner:
         for path in common_paths:
             if (path / "fast-downward.py").exists():
                 return True
-        
+
         return False
     
     def _select_best_planner(self) -> str:
@@ -144,11 +163,54 @@ class PDDLPlanner:
         problem_file: str,
         output_file: Optional[str]
     ) -> Tuple[bool, Optional[List[str]], Optional[str]]:
-        """Solve using Fast Downward"""
+        """Solve using Fast Downward.
+
+        Prefer the unified-planning engine (up_fast_downward). If not available,
+        fall back to system binary (native/WSL).
+        """
+        # Try via unified-planning engine first
+        try:
+            from unified_planning.shortcuts import OneshotPlanner, get_environment
+            from unified_planning.io import PDDLReader
+            # Disable credits output
+            get_environment().credits_stream = None
+
+            # Read with UTF-8 and pass to UP reader to avoid encoding issues
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.pddl', delete=False) as temp_domain:
+                with open(domain_file, 'r', encoding='utf-8') as df:
+                    temp_domain.write(df.read())
+                temp_domain_path = temp_domain.name
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.pddl', delete=False) as temp_problem:
+                with open(problem_file, 'r', encoding='utf-8') as pf:
+                    temp_problem.write(pf.read())
+                temp_problem_path = temp_problem.name
+
+            try:
+                reader = PDDLReader()
+                problem = reader.parse_problem(temp_domain_path, temp_problem_path)
+                with OneshotPlanner(name='fast-downward') as planner:
+                    result = planner.solve(problem)
+                if result.status.name in ['SOLVED_SATISFICING', 'SOLVED_OPTIMALLY']:
+                    plan = self._convert_up_plan_to_pddl(result.plan)
+                    if output_file:
+                        with open(output_file, 'w') as f:
+                            f.write('\n'.join(plan))
+                    return True, plan, None
+                return False, None, f"No solution found: {result.status.name}"
+            finally:
+                try:
+                    os.unlink(temp_domain_path)
+                    os.unlink(temp_problem_path)
+                except Exception:
+                    pass
+        except Exception:
+            # If unified-planning engine not available, try system binary as fallback
+            pass
+
+        # Fallback: call system binary (native/WSL)
         with tempfile.TemporaryDirectory() as tmpdir:
             plan_file = output_file or os.path.join(tmpdir, "plan.txt")
-            
-            # Convert Windows paths to WSL paths if using WSL
+
             use_wsl = False
             try:
                 result = subprocess.run(
@@ -159,13 +221,11 @@ class PDDLPlanner:
                 use_wsl = result.returncode == 0
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 pass
-            
+
             if use_wsl:
-                # Convert paths for WSL
                 domain_wsl = self._windows_to_wsl_path(domain_file)
                 problem_wsl = self._windows_to_wsl_path(problem_file)
                 plan_wsl = self._windows_to_wsl_path(plan_file)
-                
                 cmd = [
                     "wsl",
                     "fast-downward.py",
@@ -182,7 +242,7 @@ class PDDLPlanner:
                     "--search", "astar(lmcut())",
                     "--plan-file", plan_file
                 ]
-            
+
             try:
                 result = subprocess.run(
                     cmd,
@@ -190,15 +250,12 @@ class PDDLPlanner:
                     text=True,
                     timeout=60
                 )
-                
-                # Fast Downward returns 0 on success
                 if result.returncode == 0 and os.path.exists(plan_file):
                     with open(plan_file, 'r') as f:
                         plan = self._parse_fast_downward_plan(f.read())
                     return True, plan, None
                 else:
                     return False, None, f"Fast Downward failed: {result.stderr}"
-            
             except subprocess.TimeoutExpired:
                 return False, None, "Planner timeout (60s)"
             except Exception as e:
@@ -281,31 +338,35 @@ class PDDLPlanner:
         
         try:
             from pyperplan.planner import search_plan, SEARCHES, HEURISTICS
-            from pyperplan.pddl.parser import Parser
-            
-            # Parse domain and problem
-            domain = Parser(domain_file).parse_domain()
-            problem = Parser(problem_file).parse_problem(domain)
             
             # Get search and heuristic functions
             search_func = SEARCHES.get('astar')
             heuristic_class = HEURISTICS.get('hff')
             
-            # Search for plan
+            # pyperplan.search_plan expects file paths (domain, problem)
             plan = search_plan(
-                domain,
-                problem,
+                domain_file,
+                problem_file,
                 search_func,
                 heuristic_class
             )
             
             if plan:
-                # Convert to PDDL format
+                # Convert to PDDL-like action strings
                 plan_actions = []
                 for action in plan:
-                    action_str = f"({action.name}"
-                    for sig in action.signature:
-                        action_str += f" {sig[0]}"  # parameter name
+                    action_str = f"({getattr(action, 'name', 'action')}"
+                    # Try common attribute names for parameters in pyperplan
+                    params = []
+                    if hasattr(action, 'args') and action.args is not None:
+                        params = [str(p) for p in action.args]
+                    elif hasattr(action, 'parameters') and action.parameters is not None:
+                        params = [str(p) for p in action.parameters]
+                    elif hasattr(action, 'signature') and action.signature is not None:
+                        # Fallback: original (older custom structure)
+                        params = [str(sig[0]) for sig in action.signature]
+                    for p in params:
+                        action_str += f" {p}"
                     action_str += ")"
                     plan_actions.append(action_str)
                 
@@ -372,17 +433,12 @@ def main():
     )
     parser.add_argument(
         '--output',
-        help='Output plan file (default: stdout)'
+        help='Optional: save full plan (one action per line) to this file'
     )
     parser.add_argument(
-        '--api',
+        '--raw',
         action='store_true',
-        help='Output in API format (JSON)'
-    )
-    parser.add_argument(
-        '--simple-api',
-        action='store_true',
-        help='Output in simple API format (compatible with mock planner)'
+        help='Output raw PDDL plan (one action per line) instead of JSON'
     )
     parser.add_argument(
         '--list-planners',
@@ -405,10 +461,6 @@ def main():
     
     planner = PDDLPlanner(args.planner)
     
-    # Only show planner info if not in simple-api mode
-    if not args.simple_api:
-        print(f"Using planner: {planner.planner_type}", file=sys.stderr)
-    
     success, plan, error = planner.solve(
         args.domain,
         args.problem,
@@ -416,58 +468,56 @@ def main():
     )
     
     if success:
-        if args.simple_api or args.api:
-            # Extract goal location from plan
-            goal_location = None
+        # Optionally: write full plan to file if requested
+        if args.output and plan:
+            with open(args.output, 'w') as f:
+                f.write('\n'.join(plan))
+
+        if args.raw:
+            # Raw PDDL plan output
             if plan:
-                last_action = plan[-1]
-                # Parse last action to get destination
-                # Format: (navegar robo from to)
-                parts = last_action.strip('()').split()
-                if len(parts) >= 4:
-                    goal_location = parts[3]
-            
-            if args.simple_api:
-                # Simple API format (compatible with mock planner)
-                pretty_map = {
-                    "farmacia": "farmácia",
-                    "recepcao": "recepção",
-                    "corredor_central": "corredor central",
-                    "corredor_ala_1": "corredor ala 1",
-                    "corredor_ala_2": "corredor ala 2",
-                    "corredor_ala_3": "corredor ala 3",
-                    "sala_cirurgia": "sala de cirurgia",
-                    "quarto_101": "quarto 101",
-                    "quarto_102": "quarto 102",
-                }
-                
-                destination_label = pretty_map.get(goal_location, goal_location.replace("_", " ")) if goal_location else None
-                
-                result = {
-                    "task": "navigate",
-                    "destination": goal_location,
-                    "destination_label": destination_label
-                }
-                print(json.dumps(result, ensure_ascii=False))
-            else:
-                # Full API format
-                result = {
-                    "status": "success",
-                    "planner": planner.planner_type,
-                    "plan": plan,
-                    "num_actions": len(plan) if plan else 0
-                }
-                if goal_location:
-                    result["destination"] = goal_location
-                
-                print(json.dumps(result, ensure_ascii=False, indent=2))
-        else:
-            if not args.output:
-                print("; Plan found:")
                 for action in plan:
                     print(action)
-                print(f"; Plan length: {len(plan)}")
-        
+        else:
+            # Default: emit SIMPLE per-step JSON to stdout
+            pretty_map = {
+                "farmacia": "farmácia",
+                "recepcao": "recepção",
+                "corredor_central": "corredor central",
+                "corredor_ala_1": "corredor ala 1",
+                "corredor_ala_2": "corredor ala 2",
+                "corredor_ala_3": "corredor ala 3",
+                "sala_cirurgia": "sala de cirurgia",
+                "quarto_101": "quarto 101",
+                "quarto_102": "quarto 102",
+            }
+
+            def _extract_dest(action_str: str) -> Optional[str]:
+                s = action_str.strip()
+                while s.startswith('(') and s.endswith(')'):
+                    inner = s[1:-1].strip()
+                    if not inner or inner.startswith('(') and inner.endswith(')'):
+                        s = inner
+                    else:
+                        s = '(' + inner + ')'
+                        break
+                parts = s.strip('()').split()
+                if len(parts) >= 4:
+                    return parts[3]
+                return None
+
+            if plan:
+                for act in plan:
+                    dest = _extract_dest(act)
+                    if not dest:
+                        continue
+                    destination_label = pretty_map.get(dest, dest.replace('_', ' '))
+                    result = {
+                        "task": "navigate",
+                        "destination": dest,
+                        "destination_label": destination_label,
+                    }
+                    print(json.dumps(result, ensure_ascii=False))
         return 0
     else:
         print(f"Error: {error}", file=sys.stderr)
